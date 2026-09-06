@@ -1,0 +1,9 @@
+{
+  "kline_interval": "5M",
+  "min_24h_amount_usdt": 20000,
+  "mavol_period": 5,
+  "vol_multiplier": 1.5,
+  "pct_change_multiplier": 2.0,
+  "kline_fetch_limit": 15,
+  "request_sleep_sec": 0.15
+}
