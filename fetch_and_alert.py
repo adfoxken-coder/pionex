@@ -37,6 +37,8 @@ DEFAULT_CONFIG = {
     "mavol_period": 5,               # 條件二:MAVOL 的期數
     "vol_multiplier": 1.5,           # 條件二:成交量需超過 MAVOL 的倍數
     "pct_change_multiplier": 2.0,    # 條件三:漲跌幅需超過前一根的倍數
+    "min_body_ratio": 0.7,           # 條件四:實體(收盤-開盤)需佔整根K線(高-低)的比例
+    "max_prev_wick_ratio": 0.5,      # 條件五:前一根K線影線不能超過最新這根K線(高-低)的比例
     "kline_fetch_limit": 15,         # 每次抓取的 K 線根數(需 >= mavol_period + 3)
     "request_sleep_sec": 0.15,       # 每次呼叫 klines API 之間的間隔,避免超過速率限制
 
@@ -181,6 +183,8 @@ def evaluate_symbol(klines, config, interval_ms, now_ms):
 
     latest_open = float(latest["open"])
     latest_close = float(latest["close"])
+    latest_high = float(latest["high"])
+    latest_low = float(latest["low"])
     latest_vol = float(latest["volume"])
 
     if latest_open == 0:
@@ -209,7 +213,26 @@ def evaluate_symbol(klines, config, interval_ms, now_ms):
         baseline = abs(prev_pct)
     pct_ok = abs(latest_pct) >= config["pct_change_multiplier"] * baseline
 
-    matched = is_bullish and vol_ok and pct_ok
+    # 條件四:飽滿陽K,實體(收盤-開盤)佔整根K線(最高-最低)的比例 >= min_body_ratio
+    candle_range = latest_high - latest_low
+    if candle_range > 0:
+        body_ratio = (latest_close - latest_open) / candle_range
+    else:
+        body_ratio = 0.0
+    body_ok = body_ratio >= config["min_body_ratio"]
+
+    # 條件五:前一根 K 線的「上影線」不能超過最新這根 K 線「實體」的一半
+    prev_high = float(prev["high"])
+    prev_open = float(prev["open"])
+    prev_close = float(prev["close"])
+    prev_upper_wick = prev_high - max(prev_open, prev_close)
+    latest_body = latest_close - latest_open  # 已知 is_bullish 為真時此值為正
+    if latest_body > 0:
+        wick_ok = prev_upper_wick <= config["max_prev_wick_ratio"] * latest_body
+    else:
+        wick_ok = False
+
+    matched = is_bullish and vol_ok and pct_ok and body_ok and wick_ok
     return matched, latest_close, latest_pct
 
 
@@ -295,13 +318,16 @@ def main():
 
     if matches:
         now_taipei = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+        interval_minutes = interval_ms // 60000
         lines = [
             f"⚠️ Pionex 條件符合快訊 ({now_taipei} UTC+8)",
             "=============================",
-            "條件",
+            f"條件(當前偵測 {interval_minutes} 分鐘級別)",
             f"1.24小時成交量>{int(config['min_24h_amount_usdt'])}usdt",
             f"2.成交量>{config['vol_multiplier']}倍mavol{config['mavol_period']}",
             f"3.漲幅實體為前一根的{config['pct_change_multiplier']}倍",
+            f"4.實體飽滿陽K(實體≥{int(config['min_body_ratio']*100)}%)",
+            f"5.前一根上影線≤最新K線實體的{int(config['max_prev_wick_ratio']*100)}%",
             "=============================",
         ]
         for base_currency, close_price, pct in matches:
