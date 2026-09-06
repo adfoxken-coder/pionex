@@ -48,9 +48,14 @@ DEFAULT_CONFIG = {
         "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
         "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
         "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
-        "TQQQX", "DFDVX",
+        "TQQQX", "DFDVX", "ASMLX",
         # 貴金屬
         "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT",
+    ],
+    # 「基礎貨幣」本身就是穩定幣的合約(例如 USDT/TRY、USDT/BRL 這類外匯型合約),
+    # 屬於「其他」類別而非一般加密貨幣方向性交易標的,一併排除
+    "excluded_stablecoin_bases": [
+        "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD", "USDD", "PYUSD", "USDE",
     ],
     # 若幣種名稱(name 欄位)包含以下關鍵字,也會自動排除(不分大小寫)
     "exclude_name_keywords": [
@@ -209,13 +214,17 @@ def evaluate_symbol(klines, config, interval_ms, now_ms):
 
 
 def is_excluded_asset(symbol_info, config):
-    """判斷是否為要排除的非加密貨幣資產(美股代幣、貴金屬等)"""
+    """判斷是否為要排除的非加密貨幣資產(美股代幣、貴金屬、外匯型合約等)"""
     base = symbol_info.get("base", "").upper()
     name = (symbol_info.get("name") or "").lower()
 
     excluded_bases = {b.upper() for b in config.get("excluded_base_currencies", [])}
     if base in excluded_bases:
         return True
+
+    stablecoin_bases = {b.upper() for b in config.get("excluded_stablecoin_bases", [])}
+    if base in stablecoin_bases:
+        return True  # 基礎貨幣本身是穩定幣,通常是外匯型合約,非一般加密貨幣
 
     keywords = config.get("exclude_name_keywords", [])
     if name and any(kw.lower() in name for kw in keywords):
