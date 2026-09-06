@@ -1,5 +1,5 @@
 {
-  "pct_change_alert": 5.0,
+  "pct_change_alert": 1.0,
   "price_thresholds": {
   }
 }
