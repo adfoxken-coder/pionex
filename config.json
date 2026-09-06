@@ -1,0 +1,20 @@
+{
+  "kline_interval": "15M",
+  "min_24h_amount_usdt": 20000,
+  "mavol_period": 5,
+  "vol_multiplier": 1.5,
+  "pct_change_multiplier": 2.0,
+  "kline_fetch_limit": 15,
+  "request_sleep_sec": 0.15,
+  "excluded_base_currencies": [
+    "AAPLX", "TSLAX", "NVDAX", "SPYX", "QQQX", "MSTRX", "CRCLX", "GOOGLX",
+    "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
+    "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
+    "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
+    "TQQQX", "DFDVX",
+    "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT"
+  ],
+  "exclude_name_keywords": [
+    "stock", "xstock", "gold", "silver", "platinum", "palladium", "metal"
+  ]
+}
