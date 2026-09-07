@@ -264,23 +264,22 @@ INTERVAL_LABELS = {
     "4H": {"full": "4小時級別", "short": "4h"},
 }
 
+REFERENCE_SYMBOL = "BTC_USDT_PERP"  # 用來偵測「1小時/4小時K線是否有新的一根收盤」的參考幣種
 
-def get_due_intervals(run_start_taipei):
-    """
-    根據現在是不是整點、是不是4小時收線時間點,決定這次要偵測哪些週期。
-    - 每次執行都一定會偵測 15M
-    - 分鐘數在 0~4 之間(容忍排程延遲)才視為整點,額外偵測 60M
-    - 同時是整點,且小時數是 4 的倍數(00/04/08/12/16/20)才額外偵測 4H
-    """
-    minute = run_start_taipei.minute
-    hour = run_start_taipei.hour
-    due = ["15M"]
-    is_hour_mark = minute < 5
-    if is_hour_mark:
-        due.append("60M")
-        if hour % 4 == 0:
-            due.append("4H")
-    return due
+
+def get_latest_closed_candle_time(session, symbol, interval, now_ms):
+    """回傳指定週期「最新一根已收盤K線」的開盤時間(ms),沒有資料則回傳 None"""
+    interval_ms = INTERVAL_MS.get(interval, 15 * 60 * 1000)
+    try:
+        klines = get_klines(session, symbol, interval, limit=5)
+    except Exception as e:
+        print(f"[警告] 取得 {symbol} {interval} 參考K線失敗:{e}")
+        return None
+    sorted_klines = sorted(klines, key=lambda k: k["time"])
+    closed = [k for k in sorted_klines if k["time"] + interval_ms <= now_ms]
+    if not closed:
+        return None
+    return closed[-1]["time"]
 
 
 def main():
@@ -289,11 +288,7 @@ def main():
     for k, v in DEFAULT_CONFIG.items():
         config.setdefault(k, v)
 
-    # 先記錄「這次執行代表的排程時間點」,再決定這次要偵測哪些週期
-    # (務必在等待、抓資料之前就記錄,避免因為執行時間拖長而誤判)
     run_start_taipei = datetime.now(TAIPEI_TZ)
-    intervals = get_due_intervals(run_start_taipei)
-    print(f"本次執行時間點:{run_start_taipei.strftime('%Y-%m-%d %H:%M:%S')} UTC+8,本次偵測週期:{intervals}")
 
     # 排程一開始先等待,確保交易所該收盤的K線已經確實寫入完成,避免抓到舊的一根
     settle_delay = config.get("settle_delay_sec", 45)
@@ -302,6 +297,28 @@ def main():
         time.sleep(settle_delay)
 
     now_ms = int(time.time() * 1000)
+
+    state = load_json(STATE_FILE, {})
+
+    # 判斷這次要偵測哪些週期:不依賴「現在幾點幾分」(因為 GitHub 排程常有幾分鐘延遲,
+    # 用時鐘猜測不可靠),而是直接問 Pionex「1小時/4小時K線,最新收盤那一根,是不是比
+    # 上次記錄的更新」。只要真的有新的一根收盤,不管排程延遲多久都一定抓得到。
+    session = requests.Session()
+    intervals = ["15M"]
+
+    latest_60m_time = get_latest_closed_candle_time(session, REFERENCE_SYMBOL, "60M", now_ms)
+    prev_60m_time = state.get("last_60m_boundary_ms")
+    due_60m = latest_60m_time is not None and (prev_60m_time is None or latest_60m_time > prev_60m_time)
+    if due_60m:
+        intervals.append("60M")
+
+    latest_4h_time = get_latest_closed_candle_time(session, REFERENCE_SYMBOL, "4H", now_ms)
+    prev_4h_time = state.get("last_4h_boundary_ms")
+    due_4h = latest_4h_time is not None and (prev_4h_time is None or latest_4h_time > prev_4h_time)
+    if due_4h:
+        intervals.append("4H")
+
+    print(f"本次執行時間點:{run_start_taipei.strftime('%Y-%m-%d %H:%M:%S')} UTC+8,本次偵測週期:{intervals}")
 
     symbols_map = get_perp_symbols()      # {symbol: {"base":..., "name":...}}
     tickers = get_perp_tickers()          # {symbol: ticker}
@@ -330,7 +347,6 @@ def main():
 
     print(f"通過 24 小時成交金額篩選的幣種數量:{len(candidates)} / {len(crypto_only)}")
 
-    session = requests.Session()
     matches_by_interval = {}  # {interval: [(base, price, pct), ...]}
 
     # 只針對這次「該偵測」的週期,各自抓 K 線、各自用同一套條件判斷
@@ -355,7 +371,11 @@ def main():
 
     total_matches = sum(len(m) for m in matches_by_interval.values())
 
-    state = load_json(STATE_FILE, {})
+    # 記錄這次已經處理過的1小時/4小時K線邊界,避免下次重複觸發同一根
+    if due_60m:
+        state["last_60m_boundary_ms"] = latest_60m_time
+    if due_4h:
+        state["last_4h_boundary_ms"] = latest_4h_time
     state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
     state["last_run_intervals"] = intervals
     state["last_match_count"] = total_matches
