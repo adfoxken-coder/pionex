@@ -1,5 +1,4 @@
 {
-  "kline_intervals": ["15M", "60M", "4H"],
   "min_24h_amount_usdt": 20000,
   "mavol_period": 5,
   "vol_multiplier": 1.5,
@@ -8,6 +7,7 @@
   "max_prev_wick_ratio": 0.5,
   "kline_fetch_limit": 15,
   "request_sleep_sec": 0.15,
+  "settle_delay_sec": 45,
   "excluded_base_currencies": [
     "AAPLX", "TSLAX", "NVDAX", "SPYX", "QQQX", "MSTRX", "CRCLX", "GOOGLX",
     "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
