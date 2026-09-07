@@ -14,6 +14,7 @@
     "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
     "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
     "TQQQX", "DFDVX", "ASMLX",
+    "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
     "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT"
   ],
   "excluded_stablecoin_bases": [
