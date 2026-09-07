@@ -32,7 +32,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
 DEFAULT_CONFIG = {
-    "kline_interval": "15M",         # 使用的 K 線週期,需與排程頻率搭配
+    "kline_intervals": ["15M", "60M", "4H"],  # 同時偵測的 K 線週期(15分鐘/1小時/4小時)
     "min_24h_amount_usdt": 20000,    # 條件一:24 小時成交金額(USDT)門檻
     "mavol_period": 5,               # 條件二:MAVOL 的期數
     "vol_multiplier": 1.5,           # 條件二:成交量需超過 MAVOL 的倍數
@@ -256,15 +256,21 @@ def is_excluded_asset(symbol_info, config):
     return False
 
 
+INTERVAL_LABELS = {
+    "15M": {"full": "15 分鐘級別", "short": "15m"},
+    "60M": {"full": "1小時級別", "short": "1h"},
+    "4H": {"full": "4小時級別", "short": "4h"},
+}
+
+
 def main():
     config = load_json(CONFIG_FILE, DEFAULT_CONFIG)
     # 補齊任何缺少的設定值(例如使用者只改了部分欄位)
     for k, v in DEFAULT_CONFIG.items():
         config.setdefault(k, v)
 
+    intervals = config["kline_intervals"]
     now_ms = int(time.time() * 1000)
-    interval = config["kline_interval"]
-    interval_ms = INTERVAL_MS.get(interval, 15 * 60 * 1000)
 
     symbols_map = get_perp_symbols()      # {symbol: {"base":..., "name":...}}
     tickers = get_perp_tickers()          # {symbol: ticker}
@@ -278,7 +284,7 @@ def main():
     excluded_count = len(symbols_map) - len(crypto_only)
     print(f"排除非加密貨幣資產(美股代幣/貴金屬等)數量:{excluded_count} / {len(symbols_map)}")
 
-    # 條件一:先用 24 小時成交金額篩選,減少後續 K 線 API 呼叫量
+    # 條件一:先用 24 小時成交金額篩選,減少後續 K 線 API 呼叫量(所有週期共用同一份候選清單)
     candidates = []
     for symbol, info in crypto_only.items():
         ticker = tickers.get(symbol)
@@ -294,51 +300,83 @@ def main():
     print(f"通過 24 小時成交金額篩選的幣種數量:{len(candidates)} / {len(crypto_only)}")
 
     session = requests.Session()
-    matches = []
+    matches_by_interval = {}  # {interval: [(base, price, pct), ...]}
 
-    for symbol, base_currency in candidates:
-        try:
-            klines = get_klines(session, symbol, interval, config["kline_fetch_limit"])
-        except Exception as e:
-            print(f"[警告] 取得 {symbol} K 線失敗:{e}")
-            continue
-        finally:
-            time.sleep(config["request_sleep_sec"])
+    # 針對每一個時間週期,各自抓 K 線、各自用同一套條件判斷
+    for interval in intervals:
+        interval_ms = INTERVAL_MS.get(interval, 15 * 60 * 1000)
+        matches = []
+        for symbol, base_currency in candidates:
+            try:
+                klines = get_klines(session, symbol, interval, config["kline_fetch_limit"])
+            except Exception as e:
+                print(f"[警告] 取得 {symbol} {interval} K 線失敗:{e}")
+                continue
+            finally:
+                time.sleep(config["request_sleep_sec"])
 
-        matched, close_price, pct = evaluate_symbol(klines, config, interval_ms, now_ms)
-        if matched:
-            matches.append((base_currency, close_price, pct))
+            matched, close_price, pct = evaluate_symbol(klines, config, interval_ms, now_ms)
+            if matched:
+                matches.append((base_currency, close_price, pct))
 
-    print(f"本次符合全部條件的幣種數量:{len(matches)}")
+        matches_by_interval[interval] = matches
+        print(f"[{interval}] 本次符合全部條件的幣種數量:{len(matches)}")
+
+    total_matches = sum(len(m) for m in matches_by_interval.values())
 
     state = load_json(STATE_FILE, {})
     state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
-    state["last_match_count"] = len(matches)
+    state["last_match_count"] = total_matches
     save_json(STATE_FILE, state)
 
-    if matches:
-        now_taipei = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
-        interval_minutes = interval_ms // 60000
-        lines = [
-            f"⚠️ Pionex 條件符合快訊 ({now_taipei} UTC+8)",
-            "=============================",
-            f"條件(當前偵測 {interval_minutes} 分鐘級別)",
-            f"1.24小時成交量>{int(config['min_24h_amount_usdt'])}usdt",
-            f"2.成交量>{config['vol_multiplier']}倍mavol{config['mavol_period']}",
-            f"3.漲幅實體為前一根的{config['pct_change_multiplier']}倍",
-            f"4.實體飽滿陽K(實體≥{int(config['min_body_ratio']*100)}%)",
-            f"5.前一根上影線≤最新K線實體的{int(config['max_prev_wick_ratio']*100)}%",
-            "=============================",
-        ]
+    if total_matches == 0:
+        print("三個週期都沒有符合條件的幣種,本次不發送通知。")
+        return
+
+    now_taipei = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+    lines = [
+        f"⚠️ Pionex 條件符合快訊 ({now_taipei} UTC+8)",
+        "偵測條件",
+        f"1.24小時成交量>{int(config['min_24h_amount_usdt'])}usdt",
+        f"2.成交量>{config['vol_multiplier']}倍mavol{config['mavol_period']}",
+        f"3.漲幅實體為前一根的{config['pct_change_multiplier']}倍",
+        f"4.實體飽滿陽K(實體≥{int(config['min_body_ratio']*100)}%)",
+        f"5.前一根上影線≤最新K線實體的{int(config['max_prev_wick_ratio']*100)}%",
+    ]
+
+    # 記錄每個幣種出現在哪些週期,供最後的「共振」區塊使用
+    base_to_intervals = {}  # {base_currency_lower: [interval, ...]}
+
+    for interval in intervals:
+        matches = matches_by_interval.get(interval, [])
+        if not matches:
+            continue  # 這個週期沒有符合條件的幣種,整段不顯示
+        label = INTERVAL_LABELS.get(interval, {}).get("full", interval)
+        lines.append("=============================")
+        lines.append(f"(當前偵測 {label})")
         for base_currency, close_price, pct in matches:
+            base_lower = base_currency.lower()
             lines.append(
-                f"{base_currency.lower()}: 上漲 {pct:.2f}%(現價{format_price(close_price)})"
+                f"{base_lower}: 上漲 {pct:.2f}%(現價{format_price(close_price)})"
             )
-        message = "\n".join(lines)
-        print(message)
-        send_telegram_message(message)
-    else:
-        print("沒有符合條件的幣種,本次不發送通知。")
+            base_to_intervals.setdefault(base_lower, []).append(interval)
+
+    # 共振區塊:同一幣種出現在 2 個以上週期時才列出
+    resonance = [
+        (base, ivals) for base, ivals in base_to_intervals.items() if len(ivals) >= 2
+    ]
+    if resonance:
+        lines.append("=============================")
+        lines.append("共振")
+        for base, ivals in resonance:
+            short_labels = ",".join(
+                INTERVAL_LABELS.get(iv, {}).get("short", iv) for iv in ivals
+            )
+            lines.append(f"{base} ({short_labels})")
+
+    message = "\n".join(lines)
+    print(message)
+    send_telegram_message(message)
 
 
 if __name__ == "__main__":
