@@ -32,7 +32,6 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
 DEFAULT_CONFIG = {
-    "kline_intervals": ["15M", "60M", "4H"],  # 同時偵測的 K 線週期(15分鐘/1小時/4小時)
     "min_24h_amount_usdt": 20000,    # 條件一:24 小時成交金額(USDT)門檻
     "mavol_period": 5,               # 條件二:MAVOL 的期數
     "vol_multiplier": 1.5,           # 條件二:成交量需超過 MAVOL 的倍數
@@ -41,6 +40,7 @@ DEFAULT_CONFIG = {
     "max_prev_wick_ratio": 0.5,      # 條件五:前一根K線影線不能超過最新這根K線(高-低)的比例
     "kline_fetch_limit": 15,         # 每次抓取的 K 線根數(需 >= mavol_period + 3)
     "request_sleep_sec": 0.15,       # 每次呼叫 klines API 之間的間隔,避免超過速率限制
+    "settle_delay_sec": 45,          # 排程一開始先等待幾秒,確保交易所該收盤的K線已經寫入完成
 
     # 只偵測加密貨幣,排除美股代幣(xStocks)、貴金屬等非加密貨幣資產。
     # 這份清單是根據公開資訊整理,不保證完整;發現漏網或誤殺歡迎手動增減。
@@ -265,13 +265,42 @@ INTERVAL_LABELS = {
 }
 
 
+def get_due_intervals(run_start_taipei):
+    """
+    根據現在是不是整點、是不是4小時收線時間點,決定這次要偵測哪些週期。
+    - 每次執行都一定會偵測 15M
+    - 分鐘數在 0~4 之間(容忍排程延遲)才視為整點,額外偵測 60M
+    - 同時是整點,且小時數是 4 的倍數(00/04/08/12/16/20)才額外偵測 4H
+    """
+    minute = run_start_taipei.minute
+    hour = run_start_taipei.hour
+    due = ["15M"]
+    is_hour_mark = minute < 5
+    if is_hour_mark:
+        due.append("60M")
+        if hour % 4 == 0:
+            due.append("4H")
+    return due
+
+
 def main():
     config = load_json(CONFIG_FILE, DEFAULT_CONFIG)
     # 補齊任何缺少的設定值(例如使用者只改了部分欄位)
     for k, v in DEFAULT_CONFIG.items():
         config.setdefault(k, v)
 
-    intervals = config["kline_intervals"]
+    # 先記錄「這次執行代表的排程時間點」,再決定這次要偵測哪些週期
+    # (務必在等待、抓資料之前就記錄,避免因為執行時間拖長而誤判)
+    run_start_taipei = datetime.now(TAIPEI_TZ)
+    intervals = get_due_intervals(run_start_taipei)
+    print(f"本次執行時間點:{run_start_taipei.strftime('%Y-%m-%d %H:%M:%S')} UTC+8,本次偵測週期:{intervals}")
+
+    # 排程一開始先等待,確保交易所該收盤的K線已經確實寫入完成,避免抓到舊的一根
+    settle_delay = config.get("settle_delay_sec", 45)
+    if settle_delay > 0:
+        print(f"等待 {settle_delay} 秒讓交易所K線資料寫入完成...")
+        time.sleep(settle_delay)
+
     now_ms = int(time.time() * 1000)
 
     symbols_map = get_perp_symbols()      # {symbol: {"base":..., "name":...}}
@@ -304,7 +333,7 @@ def main():
     session = requests.Session()
     matches_by_interval = {}  # {interval: [(base, price, pct), ...]}
 
-    # 針對每一個時間週期,各自抓 K 線、各自用同一套條件判斷
+    # 只針對這次「該偵測」的週期,各自抓 K 線、各自用同一套條件判斷
     for interval in intervals:
         interval_ms = INTERVAL_MS.get(interval, 15 * 60 * 1000)
         matches = []
@@ -328,16 +357,17 @@ def main():
 
     state = load_json(STATE_FILE, {})
     state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
+    state["last_run_intervals"] = intervals
     state["last_match_count"] = total_matches
     save_json(STATE_FILE, state)
 
     if total_matches == 0:
-        print("三個週期都沒有符合條件的幣種,本次不發送通知。")
+        print("本次偵測的週期都沒有符合條件的幣種,本次不發送通知。")
         return
 
-    now_taipei = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+    now_taipei_str = run_start_taipei.strftime("%Y-%m-%d %H:%M")
     lines = [
-        f"⚠️ Pionex 條件符合快訊 ({now_taipei} UTC+8)",
+        f"⚠️ Pionex 條件符合快訊 ({now_taipei_str} UTC+8)",
         "偵測條件",
         f"1.24小時成交量>{int(config['min_24h_amount_usdt'])}usdt",
         f"2.成交量>{config['vol_multiplier']}倍mavol{config['mavol_period']}",
@@ -363,18 +393,19 @@ def main():
             )
             base_to_intervals.setdefault(base_lower, []).append(interval)
 
-    # 共振區塊:同一幣種出現在 2 個以上週期時才列出
-    resonance = [
-        (base, ivals) for base, ivals in base_to_intervals.items() if len(ivals) >= 2
-    ]
-    if resonance:
-        lines.append("=============================")
-        lines.append("共振")
-        for base, ivals in resonance:
-            short_labels = ",".join(
-                INTERVAL_LABELS.get(iv, {}).get("short", iv) for iv in ivals
-            )
-            lines.append(f"{base} ({short_labels})")
+    # 共振區塊:只有這次同時偵測了 2 個以上週期時才有意義(整點/4小時收線時)
+    if len(intervals) >= 2:
+        resonance = [
+            (base, ivals) for base, ivals in base_to_intervals.items() if len(ivals) >= 2
+        ]
+        if resonance:
+            lines.append("=============================")
+            lines.append("共振")
+            for base, ivals in resonance:
+                short_labels = ",".join(
+                    INTERVAL_LABELS.get(iv, {}).get("short", iv) for iv in ivals
+                )
+                lines.append(f"{base} ({short_labels})")
 
     message = "\n".join(lines)
     print(message)
