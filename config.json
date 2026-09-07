@@ -1,5 +1,5 @@
 {
-  "kline_interval": "15M",
+  "kline_intervals": ["15M", "60M", "4H"],
   "min_24h_amount_usdt": 20000,
   "mavol_period": 5,
   "vol_multiplier": 1.5,
