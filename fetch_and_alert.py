@@ -53,6 +53,7 @@ DEFAULT_CONFIG = {
         "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
         "TQQQX", "DFDVX", "ASMLX", "TSMX", "SNDKX", "USOX", "QNTX", "RGTIX",
         "QCOMX", "GLWX", "VVV", "SHAZX", "SMHX",
+        "COHRX", "CRWVX", "FLNCX", "IRENX", "OKLOX", "PAYPX", "SMCIX",
         # 美股/韓股代幣(使用者回報確認為股票代幣)
         "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
         # 私人公司/未上市股權相關代幣(使用者回報確認非加密貨幣)
