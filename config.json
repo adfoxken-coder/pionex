@@ -16,9 +16,9 @@
     "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
     "TQQQX", "DFDVX", "ASMLX", "TSMX", "SNDKX", "USOX", "QNTX", "RGTIX",
     "QCOMX", "GLWX", "VVV", "SHAZX", "SMHX",
-    "COHRX", "CRWVX", "FLNCX", "IRENX", "OKLOX", "PAYPX", "SMCIX",
+    "COHRX", "CRWVX", "FLNCX", "IRENX", "OKLOX", "PAYPX", "SMCIX", "ORCLX",
     "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
-    "OPENAI",
+    "OPENAI", "ANTHROPIC",
     "BRENTOIL",
     "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT"
   ],
