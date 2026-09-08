@@ -29,6 +29,10 @@ PIONEX_BASE = "https://api.pionex.com"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "state.json")
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
+# 兩支機器人(訊號機器人 / 型態機器人)共用的非加密貨幣排除清單,存放在 pionex repo 裡。
+# 每次執行都會嘗試從這裡即時抓取最新清單,失敗才退回使用本地 config.json 裡的備援清單。
+SHARED_EXCLUDE_URL = "https://raw.githubusercontent.com/adfoxken-coder/pionex/main/shared_excluded_assets.json"
+
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
 DEFAULT_CONFIG = {
@@ -245,6 +249,24 @@ def evaluate_symbol(klines, config, interval_ms, now_ms):
     return matched, latest_close, latest_pct
 
 
+def get_shared_exclusions():
+    """
+    嘗試從共用檔案(SHARED_EXCLUDE_URL)即時抓取最新的排除清單。
+    成功回傳 dict(包含 excluded_base_currencies / excluded_stablecoin_bases /
+    exclude_name_keywords 三個 key),失敗回傳 None(呼叫端會退回使用本地清單)。
+    """
+    try:
+        resp = requests.get(SHARED_EXCLUDE_URL, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("共用排除清單格式不正確")
+        return data
+    except Exception as e:
+        print(f"[警告] 無法取得共用排除清單,改用本地備援清單:{e}")
+        return None
+
+
 def is_excluded_asset(symbol_info, config):
     """判斷是否為要排除的非加密貨幣資產(美股代幣、貴金屬、外匯型合約等)"""
     base = symbol_info.get("base", "").upper()
@@ -294,6 +316,17 @@ def main():
     # 補齊任何缺少的設定值(例如使用者只改了部分欄位)
     for k, v in DEFAULT_CONFIG.items():
         config.setdefault(k, v)
+
+    # 嘗試用共用排除清單覆蓋本地清單,讓「訊號機器人」跟「型態機器人」共用同一份
+    # 非加密貨幣排除清單(只要更新共用檔案,兩邊下次執行就會自動套用)
+    shared = get_shared_exclusions()
+    if shared:
+        for key in ("excluded_base_currencies", "excluded_stablecoin_bases", "exclude_name_keywords"):
+            if key in shared:
+                config[key] = shared[key]
+        print("已套用共用排除清單")
+    else:
+        print("改用本地 config.json 裡的排除清單")
 
     run_start_taipei = datetime.now(TAIPEI_TZ)
 
