@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     "mavol_period": 5,               # 條件二:MAVOL 的期數
     "vol_multiplier": 1.5,           # 條件二:成交量需超過 MAVOL 的倍數
     "pct_change_multiplier": 2.0,    # 條件三:漲跌幅需超過前一根的倍數
+    "min_pct_change_15m": 1.0,       # 額外規則:15 分鐘級別的漲幅需 >= 這個百分比才推播(60M/4H 不受影響)
     "min_body_ratio": 0.7,           # 條件四:實體(收盤-開盤)需佔整根K線(高-低)的比例
     "max_prev_wick_ratio": 0.5,      # 條件五:前一根K線影線不能超過最新這根K線(高-低)的比例
     "kline_fetch_limit": 15,         # 每次抓取的 K 線根數(需 >= mavol_period + 3)
@@ -366,6 +367,9 @@ def main():
 
             matched, close_price, pct = evaluate_symbol(klines, config, interval_ms, now_ms)
             if matched:
+                # 額外規則:15 分鐘級別要漲幅 >= min_pct_change_15m 才推播
+                if interval == "15M" and pct < config.get("min_pct_change_15m", 0):
+                    continue
                 matches.append((base_currency, close_price, pct))
 
         matches_by_interval[interval] = matches
