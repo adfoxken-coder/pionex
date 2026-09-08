@@ -1,0 +1,22 @@
+{
+  "_說明": "這是兩支機器人(訊號機器人 fetch_and_alert.py / 型態機器人 pattern_alert.py)共用的非加密貨幣排除清單。兩支程式每次執行時都會透過網路讀取這個檔案,所以只要更新這一個檔案,兩邊下次執行就會自動套用新的排除清單,不需要各自維護一份。",
+  "excluded_base_currencies": [
+    "AAPLX", "TSLAX", "NVDAX", "SPYX", "QQQX", "MSTRX", "CRCLX", "GOOGLX",
+    "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
+    "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
+    "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
+    "TQQQX", "DFDVX", "ASMLX", "TSMX", "SNDKX", "USOX", "QNTX", "RGTIX",
+    "QCOMX", "GLWX", "VVV", "SHAZX", "SMHX",
+    "COHRX", "CRWVX", "FLNCX", "IRENX", "OKLOX", "PAYPX", "SMCIX", "ORCLX",
+    "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
+    "OPENAI", "ANTHROPIC",
+    "BRENTOIL",
+    "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT"
+  ],
+  "excluded_stablecoin_bases": [
+    "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD", "USDD", "PYUSD", "USDE"
+  ],
+  "exclude_name_keywords": [
+    "stock", "xstock", "gold", "silver", "platinum", "palladium", "metal"
+  ]
+}
