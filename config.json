@@ -14,9 +14,10 @@
     "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
     "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
     "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
-    "TQQQX", "DFDVX", "ASMLX", "TSMX",
+    "TQQQX", "DFDVX", "ASMLX", "TSMX", "SNDKX", "USOX", "QNTX", "RGTIX",
     "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
     "OPENAI",
+    "BRENTOIL",
     "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT"
   ],
   "excluded_stablecoin_bases": [
