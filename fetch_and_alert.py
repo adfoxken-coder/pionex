@@ -51,11 +51,13 @@ DEFAULT_CONFIG = {
         "VTIX", "BRK.BX", "UNHX", "GMEX", "CMCSAX", "PGX", "NFLXX", "XOMX",
         "AMBRX", "LLYX", "ABBVX", "VX", "CSCOX", "MCDX", "NVOX", "KRAQX",
         "PFEX", "INTCX", "HOODX", "AMZNX", "METAX", "COINX", "MSFTX",
-        "TQQQX", "DFDVX", "ASMLX", "TSMX",
+        "TQQQX", "DFDVX", "ASMLX", "TSMX", "SNDKX", "USOX", "QNTX", "RGTIX",
         # 美股/韓股代幣(使用者回報確認為股票代幣)
         "AAOIX", "AXTIX", "CXMTX", "DRAMX", "SKHX",
         # 私人公司/未上市股權相關代幣(使用者回報確認非加密貨幣)
         "OPENAI",
+        # 原物料/大宗商品(石油等,非加密貨幣)
+        "BRENTOIL",
         # 貴金屬
         "PPLTX", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT",
     ],
