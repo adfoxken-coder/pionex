@@ -3,7 +3,7 @@
   "mavol_period": 5,
   "vol_multiplier": 1.5,
   "pct_change_multiplier": 2.0,
-  "min_pct_change_15m": 1.0,
+  "min_pct_change_1h": 1.0,
   "min_body_ratio": 0.7,
   "max_prev_wick_ratio": 0.5,
   "kline_fetch_limit": 15,
