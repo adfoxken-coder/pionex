@@ -40,7 +40,7 @@ DEFAULT_CONFIG = {
     "mavol_period": 5,               # 條件二:MAVOL 的期數
     "vol_multiplier": 1.5,           # 條件二:成交量需超過 MAVOL 的倍數
     "pct_change_multiplier": 2.0,    # 條件三:漲跌幅需超過前一根的倍數
-    "min_pct_change_15m": 1.0,       # 額外規則:15 分鐘級別的漲幅需 >= 這個百分比才推播(60M/4H 不受影響)
+    "min_pct_change_1h": 1.0,        # 額外規則:1 小時級別的漲幅需 >= 這個百分比才推播(4H/1D 不受影響)
     "min_body_ratio": 0.7,           # 條件四:實體(收盤-開盤)需佔整根K線(高-低)的比例
     "max_prev_wick_ratio": 0.5,      # 條件五:前一根K線影線不能超過最新這根K線(高-低)的比例
     "kline_fetch_limit": 15,         # 每次抓取的 K 線根數(需 >= mavol_period + 3)
@@ -288,12 +288,12 @@ def is_excluded_asset(symbol_info, config):
 
 
 INTERVAL_LABELS = {
-    "15M": {"full": "15 分鐘級別", "short": "15m"},
     "60M": {"full": "1小時級別", "short": "1h"},
     "4H": {"full": "4小時級別", "short": "4h"},
+    "1D": {"full": "日線級別", "short": "1d"},
 }
 
-REFERENCE_SYMBOL = "BTC_USDT_PERP"  # 用來偵測「1小時/4小時K線是否有新的一根收盤」的參考幣種
+REFERENCE_SYMBOL = "BTC_USDT_PERP"  # 用來偵測「1小時/4小時/日線K線是否有新的一根收盤」的參考幣種
 
 
 def get_latest_closed_candle_time(session, symbol, interval, now_ms):
@@ -341,10 +341,11 @@ def main():
     state = load_json(STATE_FILE, {})
 
     # 判斷這次要偵測哪些週期:不依賴「現在幾點幾分」(因為 GitHub 排程常有幾分鐘延遲,
-    # 用時鐘猜測不可靠),而是直接問 Pionex「1小時/4小時K線,最新收盤那一根,是不是比
-    # 上次記錄的更新」。只要真的有新的一根收盤,不管排程延遲多久都一定抓得到。
+    # 用時鐘猜測不可靠),而是直接問 Pionex「1小時/4小時/日線K線,最新收盤那一根,是不是
+    # 比上次記錄的更新」。只要真的有新的一根收盤,不管排程延遲多久都一定抓得到。
+    # 三個週期都沒有新K線收盤時,這次就完全不用做事,直接跳過(節省 API 呼叫)。
     session = requests.Session()
-    intervals = ["15M"]
+    intervals = []
 
     latest_60m_time = get_latest_closed_candle_time(session, REFERENCE_SYMBOL, "60M", now_ms)
     prev_60m_time = state.get("last_60m_boundary_ms")
@@ -358,7 +359,19 @@ def main():
     if due_4h:
         intervals.append("4H")
 
+    latest_1d_time = get_latest_closed_candle_time(session, REFERENCE_SYMBOL, "1D", now_ms)
+    prev_1d_time = state.get("last_1d_boundary_ms")
+    due_1d = latest_1d_time is not None and (prev_1d_time is None or latest_1d_time > prev_1d_time)
+    if due_1d:
+        intervals.append("1D")
+
     print(f"本次執行時間點:{run_start_taipei.strftime('%Y-%m-%d %H:%M:%S')} UTC+8,本次偵測週期:{intervals}")
+
+    if not intervals:
+        print("這次沒有任何週期有新K線收盤,不需要偵測,本次提早結束。")
+        state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
+        save_json(STATE_FILE, state)
+        return
 
     symbols_map = get_perp_symbols()      # {symbol: {"base":..., "name":...}}
     tickers = get_perp_tickers()          # {symbol: ticker}
@@ -404,8 +417,8 @@ def main():
 
             matched, close_price, pct = evaluate_symbol(klines, config, interval_ms, now_ms)
             if matched:
-                # 額外規則:15 分鐘級別要漲幅 >= min_pct_change_15m 才推播
-                if interval == "15M" and pct < config.get("min_pct_change_15m", 0):
+                # 額外規則:1 小時級別要漲幅 >= min_pct_change_1h 才推播
+                if interval == "60M" and pct < config.get("min_pct_change_1h", 0):
                     continue
                 matches.append((base_currency, close_price, pct))
 
@@ -414,11 +427,13 @@ def main():
 
     total_matches = sum(len(m) for m in matches_by_interval.values())
 
-    # 記錄這次已經處理過的1小時/4小時K線邊界,避免下次重複觸發同一根
+    # 記錄這次已經處理過的1小時/4小時/日線K線邊界,避免下次重複觸發同一根
     if due_60m:
         state["last_60m_boundary_ms"] = latest_60m_time
     if due_4h:
         state["last_4h_boundary_ms"] = latest_4h_time
+    if due_1d:
+        state["last_1d_boundary_ms"] = latest_1d_time
     state["last_run_utc"] = datetime.now(timezone.utc).isoformat()
     state["last_run_intervals"] = intervals
     state["last_match_count"] = total_matches
